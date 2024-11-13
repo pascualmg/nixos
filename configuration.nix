@@ -5,8 +5,7 @@
   nixpkgs.config.allowUnfree = true;
   programs.nix-ld.enable = true;
   programs.nix-ld.libraries = with pkgs; [
-    # Add any missing dynamic libraries for unpackaged programs
-    # here, NOT in environment.systemPackages
+    # Add any missing dynamic libraries for unpackaged programs here
   ];
 
   # Hardware optimizado
@@ -22,7 +21,7 @@
       modesetting.enable = true;
       open = false;
       nvidiaSettings = true;
-      forceFullCompositionPipeline = true; # Mejora tearing
+      forceFullCompositionPipeline = true;
     };
     pulseaudio = {
       enable = true;
@@ -45,21 +44,65 @@
     __GL_SYNC_TO_VBLANK = "1";
     __GL_GSYNC_ALLOWED = "1";
     __GL_VRR_ALLOWED = "1";
+    # Añadimos variables para QEMU
+    LIBVIRT_DEFAULT_URI = "qemu:///system";
   };
 
-  boot.loader.systemd-boot.enable = true;
-  boot.loader.efi.canTouchEfiVariables = true;
+  boot = {
+    loader.systemd-boot.enable = true;
+    loader.efi.canTouchEfiVariables = true;
+    # Añadimos módulos necesarios para VM
+    kernelModules = [ "kvm-amd" "kvm-intel" "vfio" "vfio_iommu_type1" "vfio_pci" "vfio_virqfd" ];
+    # Kernel parameters para mejor rendimiento VM
+    kernelParams = [ "intel_iommu=on" "amd_iommu=on" "iommu=pt" ];
+  };
 
   networking = {
     hostName = "vespino";
     networkmanager.enable = true;
+    # Configuración para VM networking
+    bridges.br0.interfaces = [ ];  # Dejamos vacío por ahora
+    interfaces.br0 = {
+      ipv4.addresses = [ {
+        address = "192.168.53.10";
+        prefixLength = 24;
+      } ];
+    };
     firewall = {
-      enable = false;
-      allowedTCPPorts = [ 80 443 ];
+      enable = false;  # Ya lo tienes así, pero añadimos puertos necesarios
+      allowedTCPPorts = [ 80 443 53 67 68 ];  # Añadidos puertos para DHCP/DNS
+      allowedUDPPorts = [ 53 67 68 ];
+      checkReversePath = false;  # Necesario para VM bridging
+    };
+    nat = {
+      enable = true;
+      internalInterfaces = [ "br0" "virbr0" ];
+      externalInterface = "enp10s0";  # Tu interfaz principal
     };
   };
 
-  # Timezone y locale
+  # Virtualización
+ virtualisation = {
+  libvirtd = {
+    enable = true;
+    qemu = {
+      ovmf.enable = true;
+      runAsRoot = true;
+    };
+    onBoot = "ignore";
+    onShutdown = "shutdown";
+    allowedBridges = [ "br0" "virbr0" ];
+  };
+  docker = {
+      enable = true;
+      autoPrune = {
+        enable = true;
+        dates = "weekly";
+      };
+    };
+  };
+
+  # El resto de tu configuración existente...
   time.timeZone = "Europe/Madrid";
   i18n = {
     defaultLocale = "en_US.UTF-8";
@@ -76,40 +119,29 @@
     };
   };
 
-  # Audio
   sound.enable = true;
-
-  # Las nerd fonts
   fonts.packages = with pkgs; [ nerdfonts ];
 
-  # Usuario
   users.users.passh = {
     isNormalUser = true;
     description = "passh";
-    extraGroups = [ "wheel" "networkmanager" "audio" "video" "docker" "input" ];
+    extraGroups = [ "wheel" "networkmanager" "audio" "video" "docker" "input" "libvirtd" "kvm" ];  # Añadidos grupos VM
     shell = pkgs.bash;
   };
 
-  # Servicios básicos optimizados
   services = {
     xserver = {
       enable = true;
       videoDrivers = [ "nvidia" ];
-
       xkb = {
         layout = "us,es";
         variant = "";
       };
-
       windowManager.xmonad = {
         enable = true;
         enableContribAndExtras = true;
-        #config = pkgs.writeText "xmonad.hs"
-          #(builtins.readFile "/home/passh/.config/xmonad/xmonad.hs");
       };
-
       desktopManager.xfce.enable = true;
-
       displayManager = {
         setupCommands = ''
           ${pkgs.xorg.xrandr}/bin/xrandr --output DP-0 --mode 5120x1440 --rate 120 --primary --dpi 96
@@ -118,9 +150,12 @@
       };
     };
 
-    displayManager = { defaultSession = "none+xmonad"; };
+    displayManager.defaultSession = "none+xmonad";
 
-    # SSH básico
+    # Servicios adicionales para VM
+    spice-vdagentd.enable = true;  # Para mejor integración con SPICE
+    qemuGuest.enable = true;      # Soporte para guest
+
     openssh = {
       enable = true;
       settings = {
@@ -130,35 +165,9 @@
     };
   };
 
-  # Docker básico
-  virtualisation.docker = {
-    enable = true;
-    autoPrune = {
-      enable = true;
-      dates = "weekly";
-    };
-
-  virtualisation = {
-    libvirtd = {
-      enable = true;
-      qemuOvmf = true;  # Para soporte UEFI si lo necesitas
-      onBoot = "ignore";
-      onShutdown = "shutdown";
-    };
-  programs.virt-manager.enable = true;  # GUI para gestionar VMs
-
-  };
-
-  # Paquetes básicos
+  # Paquetes básicos + VM
   environment.systemPackages = with pkgs; [
-
-    #virtualizacion
-    virt-manager
-    virt-viewer
-    spice-gtk    # Para acceso remoto a la VM
-    qemu
-    OVMF         # Para soporte UEFI
-    # Basics
+    # Tus paquetes existentes
     home-manager
     wget
     git
@@ -169,14 +178,10 @@
     tree
     unzip
     zip
-
-    # NVIDIA
     nvidia-vaapi-driver
     nvtopPackages.full
     vulkan-tools
     glxinfo
-
-    # System
     xorg.setxkbmap
     xorg.xmodmap
     xorg.xinput
@@ -187,28 +192,35 @@
     usbutils
     htop
     neofetch
-
-    # Development
     emacs
     nodePackages.intelephense
     tree-sitter
-
-    # Others
     xclip
     firefox
     google-chrome
     alsa-utils
     pavucontrol
+
+    # Paquetes para virtualización
+    virt-manager
+    virt-viewer
+    qemu
+    OVMF
+    spice-gtk
+    spice-protocol
+    win-virtio  # Por si necesitas drivers Windows
+    swtpm       # Para TPM si lo necesitas
+    bridge-utils
+    dnsmasq     # Para networking
+    iptables
   ];
 
-  # Security básica
   security = {
     rtkit.enable = true;
     polkit.enable = true;
     sudo.wheelNeedsPassword = true;
   };
 
-  # Nix settings básicos
   nix = {
     settings = {
       auto-optimise-store = true;
@@ -221,6 +233,5 @@
     };
   };
 
-  # System version
   system.stateVersion = "24.05";
 }
