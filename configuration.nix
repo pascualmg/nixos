@@ -59,26 +59,84 @@
 
   networking = {
     hostName = "vespino";
-    networkmanager.enable = true;
-    # Configuración para VM networking
-    bridges.br0.interfaces = [ ];  # Dejamos vacío por ahora
-    interfaces.br0 = {
-      ipv4.addresses = [ {
-        address = "192.168.53.10";
-        prefixLength = 24;
-      } ];
+    useHostResolvConf = false;
+    useDHCP = false;
+
+    # DNS configuración - solo usar VM
+    nameservers = [ "192.168.53.12" ];
+    search = [ "grupo.vocento" ];
+    
+    # Deshabilitar resolv.conf automático
+    resolvconf.enable = false;
+
+    # Configuración de interfaces
+    interfaces = {
+      enp10s0 = {
+        useDHCP = false;
+        ipv4.addresses = [ {
+          address = "192.168.2.125";
+          prefixLength = 24;
+        } ];
+      };
+      
+      br0 = {
+        useDHCP = false;
+        ipv4 = {
+          addresses = [ {
+            address = "192.168.53.10";
+            prefixLength = 24;
+          } ];
+        };
+      };
     };
-    firewall = {
-      enable = false;  # Ya lo tienes así, pero añadimos puertos necesarios
-      allowedTCPPorts = [ 80 443 53 67 68 ];  # Añadidos puertos para DHCP/DNS
-      allowedUDPPorts = [ 53 67 68 ];
-      checkReversePath = false;  # Necesario para VM bridging
+
+    # Bridge configuración
+    bridges = {
+      br0.interfaces = [ ];
     };
+
+    # Ruta por defecto
+    defaultGateway = {
+      address = "192.168.2.1";
+      interface = "enp10s0";
+    };
+
+    # NetworkManager configuración
+    networkmanager = {
+      enable = true;
+      dns = "none";  # Desactivar DNS de NetworkManager
+      unmanaged = [ "interface-name:enp10s0" "interface-name:br0" "interface-name:vnet*" ];
+    };
+
+    # NAT y firewall
     nat = {
       enable = true;
-      internalInterfaces = [ "br0" "virbr0" ];
-      externalInterface = "enp10s0";  # Tu interfaz principal
+      internalInterfaces = [ "br0" ];
+      externalInterface = "enp10s0";
+      # Reglas específicas para VPN
+      extraCommands = ''
+        iptables -t nat -A POSTROUTING -s 192.168.53.0/24 -j MASQUERADE
+      '';
     };
+
+    firewall = {
+      enable = true;
+      allowedTCPPorts = [ 53 80 443 22 ];
+      allowedUDPPorts = [ 53 ];
+      checkReversePath = false;
+    };
+  };
+
+  # Asegurar IP forwarding
+  boot.kernel.sysctl = {
+    "net.ipv4.ip_forward" = 1;
+    "net.ipv4.conf.all.forwarding" = 1;
+    "net.ipv4.conf.default.forwarding" = 1;
+  };
+
+  # Desactivar servicios que pueden interferir
+  services = {
+    resolved.enable = false;
   };
 
   # Virtualización
