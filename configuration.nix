@@ -57,11 +57,11 @@
     kernelParams = [ "intel_iommu=on" "amd_iommu=on" "iommu=pt" ];
   };
 
-  networking = {
+networking = {
     hostName = "vespino";
     useHostResolvConf = false;
     useDHCP = false;
-
+    
     # DNS configuración - solo usar VM
     nameservers = [ "192.168.53.12" ];
     search = [ "grupo.vocento" ];
@@ -86,6 +86,19 @@
             address = "192.168.53.10";
             prefixLength = 24;
           } ];
+          # Añadimos las rutas VPN que funcionan
+          routes = [
+            {
+              address = "10.180.0.0";
+              prefixLength = 16;
+              via = "192.168.53.12";
+            }
+            {
+              address = "192.168.196.0";
+              prefixLength = 24;
+              via = "192.168.53.12";
+            }
+          ];
         };
       };
     };
